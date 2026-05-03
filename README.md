@@ -1,37 +1,35 @@
 # Codex PageSpeed Auditor Skill
 
-A Codex skill for auditing website performance with Google PageSpeed Insights.
+A Codex skill for auditing website performance with Google PageSpeed Insights and turning the results into concrete code changes.
 
-Give Codex a public URL, a set of critical routes, or a frontend repository and it can inspect the codebase, determine how the app runs, execute PageSpeed Insights in mobile and desktop, generate Markdown reports, compare before vs after runs, and suggest concrete code changes tied to the repo.
+Give Codex one or more public URLs, a frontend repository, or a baseline run and it can inspect how the app works, run mobile and desktop PSI audits, generate structured Markdown reports, compare before vs after results, and map the highest-impact findings back to specific files and implementation decisions.
 
 ## What It Does
 
 - Audits one or more public URLs with PageSpeed Insights
 - Runs mobile and desktop strategies by default
-- Generates per-route Markdown reports plus a consolidated index
-- Supports optional score budgets
+- Generates structured Markdown reports for each route plus a consolidated index
+- Supports optional score budgets such as `performance=90`
 - Supports before vs after comparisons with score deltas
+- Falls back to a structured repo-based audit when PSI is blocked by quota or missing public access
 - Helps map PSI findings back to concrete code changes in the repository
-- Warns when running on anonymous PSI quota instead of an API key
 
-## Features
+## Audit Modes
 
-- Multiple routes per run
-- Mobile + desktop reporting
-- Budget checks
-- Before/after comparisons
-- Raw JSON artifacts
-- Markdown summaries
-- Codebase-oriented fix guidance
+The skill is most useful when you think of it as a few clear modes:
+
+- `baseline`: run a first PSI audit and generate reports
+- `multi-route`: audit several important routes in the same run
+- `compare`: rerun after fixes and compare against an earlier baseline
+- `budget-check`: verify category thresholds such as performance or accessibility
+- `blocked-run`: when PSI fails because of quota, missing key, or missing public URL, generate a structured fallback report from the codebase instead of pretending the audit succeeded
 
 ## Installation
-
-Install the skill manually into your Codex skills directory.
 
 Clone the repository:
 
 ```powershell
-git clone https://github.com/designstudio/pagespeed-auditor.git
+git clone https://github.com/designstudio/codex-pagespeed-auditor-skill.git
 ```
 
 Copy the skill into your Codex skills directory:
@@ -39,7 +37,7 @@ Copy the skill into your Codex skills directory:
 ```powershell
 New-Item -ItemType Directory -Force '$env:USERPROFILE/.codex/skills' | Out-Null
 Copy-Item -Recurse -Force `
-  'pagespeed-auditor/skills/pagespeed-insights-auditor' `
+  'codex-pagespeed-auditor-skill/skills/pagespeed-insights-auditor' `
   '$env:USERPROFILE/.codex/skills/pagespeed-insights-auditor'
 ```
 
@@ -55,7 +53,7 @@ Basic audit:
 Use $pagespeed-insights-auditor to audit https://example.com
 ```
 
-Audit multiple routes:
+Audit multiple important routes:
 
 ```txt
 Use $pagespeed-insights-auditor to audit these routes:
@@ -64,7 +62,7 @@ Use $pagespeed-insights-auditor to audit these routes:
 - https://example.com/blog/post-1
 ```
 
-Audit a repository and then map the findings back to code:
+Audit a repository and map findings back to code:
 
 ```txt
 Use $pagespeed-insights-auditor to audit this project.
@@ -75,19 +73,27 @@ Target URLs:
 Run mobile and desktop, save the reports, then inspect the codebase and suggest concrete fixes.
 ```
 
-Compare before vs after fixes:
+Re-audit after fixes:
 
 ```txt
 Use $pagespeed-insights-auditor to re-run the audit for these routes and compare with the previous baseline.
+```
+
+Handle a blocked PSI run cleanly:
+
+```txt
+Use $pagespeed-insights-auditor to audit this project.
+If PSI is blocked by quota or missing API key, create a blocked-run report and continue with repo-based performance findings.
 ```
 
 ## Running the Script Directly
 
 You can also run the bundled script without invoking the skill through chat.
 
+Baseline run:
+
 ```powershell
-& 'python' `
-  'skills/pagespeed-insights-auditor/scripts/run_pagespeed_insights.py' `
+python 'skills/pagespeed-insights-auditor/scripts/run_pagespeed_insights.py' `
   --url 'https://example.com' `
   --url 'https://example.com/pricing' `
   --out-dir 'reports/pagespeed/baseline' `
@@ -99,8 +105,7 @@ You can also run the bundled script without invoking the skill through chat.
 Compare with a previous run:
 
 ```powershell
-& 'python' `
-  'skills/pagespeed-insights-auditor/scripts/run_pagespeed_insights.py' `
+python 'skills/pagespeed-insights-auditor/scripts/run_pagespeed_insights.py' `
   --url 'https://example.com' `
   --out-dir 'reports/pagespeed/after-fixes' `
   --compare-dir 'reports/pagespeed/baseline' `
@@ -108,21 +113,7 @@ Compare with a previous run:
   --budget performance=90
 ```
 
-## Options
-
-The script supports:
-
-- `--url` repeated for multiple URLs
-- `--urls-file` for batch auditing from a text file
-- `--strategy mobile|desktop|both`
-- `--categories performance,accessibility,best-practices,seo`
-- `--budget category=score`
-- `--compare-dir <previous-run>`
-- `--api-key-env <ENV_VAR_NAME>`
-- `--report-file <filename>`
-- `--index-file <filename>`
-
-## Output
+## Output Structure
 
 A typical run creates:
 
@@ -141,14 +132,26 @@ reports/
         summary.md
 ```
 
+Each route report should follow a predictable structure:
+
+- `Run Status`
+- `Route Summary`
+- `Top Issues`
+- `Repo-Backed Hypotheses`
+- `Recommended Fixes`
+- `Next Pass`
+- `Raw Artifacts`
+
+When a comparison baseline exists, include score deltas. When PSI is blocked, make that explicit and switch the report into fallback mode instead of presenting hypotheses as confirmed PSI findings.
+
 ## Recommended Workflow
 
 1. Identify the public URLs or critical routes to audit.
-2. Run `$pagespeed-insights-auditor`.
+2. Run `$pagespeed-insights-auditor` in `baseline` or `multi-route` mode.
 3. Review `index.md` and the per-route `summary.md` files.
 4. Prioritize the worst mobile bottlenecks first.
 5. Inspect the codebase and implement the highest-impact fixes.
-6. Run the audit again with `--compare-dir`.
+6. Run the audit again in `compare` mode with `--compare-dir`.
 7. Verify score deltas before closing the work.
 
 ## Notes
@@ -163,13 +166,6 @@ If the app only runs locally, use one of these:
 - a public tunnel URL
 
 The skill can still run the project locally to understand the codebase and validate fixes, but PSI itself must target a public address.
-
-For best results, provide one of:
-
-- one public URL
-- several critical public routes
-- a repository plus the public URLs you care about
-- a baseline run directory when you want before/after comparison
 
 If `PSI_API_KEY` is not configured, the script still works but uses anonymous quota, which may be rate-limited.
 
@@ -202,5 +198,3 @@ scripts/
 ## License
 
 MIT
-
-
