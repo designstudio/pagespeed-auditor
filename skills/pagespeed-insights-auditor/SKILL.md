@@ -72,7 +72,7 @@ If a dev server is started, record the command and port in your notes or report.
 Use the bundled script:
 
 ```powershell
-& 'C:/Users/henri/AppData/Local/Programs/Python/Python312/python.exe' `
+& 'python' `
   '<skill-dir>/scripts/run_pagespeed_insights.py' `
   --url 'https://example.com' `
   --url 'https://example.com/pricing' `
@@ -169,3 +169,4 @@ Call the PSI API, persist raw JSON, generate per-route reports, and generate a c
 ### references/report-format.md
 
 Use when you need a quick reminder of what the generated reports include and how to interpret the main sections, comparisons, budgets, and code-mapping workflow.
+

@@ -37,10 +37,10 @@ git clone https://github.com/designstudio/pagespeed-auditor.git
 Copy the skill into your Codex skills directory:
 
 ```powershell
-New-Item -ItemType Directory -Force 'C:/Users/henri/.codex/skills' | Out-Null
+New-Item -ItemType Directory -Force '$env:USERPROFILE/.codex/skills' | Out-Null
 Copy-Item -Recurse -Force `
   'pagespeed-auditor/skills/pagespeed-insights-auditor' `
-  'C:/Users/henri/.codex/skills/pagespeed-insights-auditor'
+  '$env:USERPROFILE/.codex/skills/pagespeed-insights-auditor'
 ```
 
 Restart Codex so it can discover the skill.
@@ -86,7 +86,7 @@ Use $pagespeed-insights-auditor to re-run the audit for these routes and compare
 You can also run the bundled script without invoking the skill through chat.
 
 ```powershell
-& 'C:/Users/henri/AppData/Local/Programs/Python/Python312/python.exe' `
+& 'python' `
   'skills/pagespeed-insights-auditor/scripts/run_pagespeed_insights.py' `
   --url 'https://example.com' `
   --url 'https://example.com/pricing' `
@@ -99,7 +99,7 @@ You can also run the bundled script without invoking the skill through chat.
 Compare with a previous run:
 
 ```powershell
-& 'C:/Users/henri/AppData/Local/Programs/Python/Python312/python.exe' `
+& 'python' `
   'skills/pagespeed-insights-auditor/scripts/run_pagespeed_insights.py' `
   --url 'https://example.com' `
   --out-dir 'reports/pagespeed/after-fixes' `
@@ -180,7 +180,7 @@ If Codex does not recognize `$pagespeed-insights-auditor`, restart Codex after i
 Check that the skill exists here:
 
 ```powershell
-Get-ChildItem 'C:/Users/henri/.codex/skills/pagespeed-insights-auditor'
+Get-ChildItem '$env:USERPROFILE/.codex/skills/pagespeed-insights-auditor'
 ```
 
 You should see at least:
@@ -202,3 +202,5 @@ scripts/
 ## License
 
 MIT
+
+
