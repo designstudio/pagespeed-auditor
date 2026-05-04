@@ -1,0 +1,12 @@
+{
+  "name": "pagespeed-insights-auditor",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "lighthouse:local": "node scripts/run_local_lighthouse.mjs"
+  },
+  "dependencies": {
+    "lighthouse": "^13.0.1"
+  }
+}

@@ -1,4 +1,4 @@
 interface:
   display_name: "PageSpeed Auditor"
-  short_description: "Executa PSI e resume gargalos do site"
-  default_prompt: "Use $pagespeed-insights-auditor to run a PageSpeed Insights audit for this project and summarize the biggest issues."
+  short_description: "Runs local Lighthouse and optional PSI follow-up"
+  default_prompt: "Use $pagespeed-insights-auditor to run a local Lighthouse audit for this project, then map the biggest findings back to code changes."
