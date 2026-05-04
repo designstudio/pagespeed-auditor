@@ -29,6 +29,8 @@ Best for:
 - repeatable before vs after checks
 - route-level work during active development
 
+The local runner prefers a Lighthouse engine that is already available. If it does not find one in the skill folder, it automatically tries `npx lighthouse`.
+
 ### 2. `psi-remote` (optional)
 
 Use this after the local audit when you want Google PageSpeed Insights results for a public URL.
@@ -37,7 +39,7 @@ Best for:
 
 - validating against a production or preview deployment
 - checking the Google PSI view of the route
-- using CrUX/field-data-aware follow-up when available
+- using CrUX or field-data-aware follow-up when available
 
 ## Audit Modes
 
@@ -63,13 +65,6 @@ New-Item -ItemType Directory -Force '$env:USERPROFILE/.codex/skills' | Out-Null
 Copy-Item -Recurse -Force `
   'codex-pagespeed-auditor-skill/skills/pagespeed-insights-auditor' `
   '$env:USERPROFILE/.codex/skills/pagespeed-insights-auditor'
-```
-
-Install the bundled Lighthouse dependency inside the skill folder:
-
-```powershell
-Set-Location '$env:USERPROFILE/.codex/skills/pagespeed-insights-auditor'
-cmd /c npm install
 ```
 
 Restart Codex so it can discover the skill.
@@ -195,12 +190,9 @@ If `PSI_API_KEY` is not configured, the PSI script still works but uses anonymou
 
 If Codex does not recognize `$pagespeed-insights-auditor`, restart Codex after installing the skill.
 
-If local Lighthouse says the dependency is missing, install it from the skill directory:
+If the local runner cannot find a ready Lighthouse binary, it automatically tries `npx lighthouse`.
 
-```powershell
-Set-Location '$env:USERPROFILE/.codex/skills/pagespeed-insights-auditor'
-cmd /c npm install
-```
+If both options fail, the report should tell you that no local Lighthouse engine was available.
 
 Check that the skill exists here:
 
@@ -221,7 +213,7 @@ scripts/
 ## Repository Contents
 
 - `skills/pagespeed-insights-auditor/SKILL.md`
-- `skills/pagespeed-insights-auditor/package.json`
+- `skills/pagespeed-insights-auditor/package.json` for optional local Lighthouse caching
 - `skills/pagespeed-insights-auditor/agents/openai.yaml`
 - `skills/pagespeed-insights-auditor/references/report-format.md`
 - `skills/pagespeed-insights-auditor/scripts/run_local_lighthouse.mjs`

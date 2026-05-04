@@ -10,6 +10,8 @@ This skill now has two audit engines.
 
 Primary engine. Use it first when the goal is to run a real PageSpeed-style audit from inside the repository.
 
+The runner should prefer an already available local Lighthouse binary and fall back to `npx lighthouse` when needed.
+
 What it gives you:
 
 - Lighthouse scores for `performance`, `accessibility`, `best-practices`, and `seo`

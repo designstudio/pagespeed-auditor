@@ -194,32 +194,54 @@ function detectMode(routeCount, compareDir, budgets) {
   return 'baseline';
 }
 
-function getLighthouseExecutable() {
+function createLighthouseInvoker() {
   const filename = process.platform === 'win32' ? 'lighthouse.cmd' : 'lighthouse';
-  const directPath = path.join(skillDir, 'node_modules', '.bin', filename);
-  if (existsSync(directPath)) {
-    return directPath;
+  const localBin = path.join(skillDir, 'node_modules', '.bin', filename);
+  if (existsSync(localBin)) {
+    return {
+      label: 'local-node-modules',
+      run(args) {
+        return spawnSync(localBin, args, { cwd: skillDir, encoding: 'utf8', stdio: 'pipe' });
+      },
+    };
   }
-  throw new Error(
-    'Local Lighthouse dependency is missing. Run npm install inside the skill directory before using local mode.'
-  );
+
+  if (process.platform === 'win32') {
+    return {
+      label: 'npx-lighthouse',
+      run(args) {
+        return spawnSync('cmd.exe', ['/d', '/s', '/c', 'npx', 'lighthouse', ...args], {
+          cwd: skillDir,
+          encoding: 'utf8',
+          stdio: 'pipe',
+        });
+      },
+    };
+  }
+
+  return {
+    label: 'npx-lighthouse',
+    run(args) {
+      return spawnSync('npx', ['lighthouse', ...args], {
+        cwd: skillDir,
+        encoding: 'utf8',
+        stdio: 'pipe',
+      });
+    },
+  };
 }
 
-function runCommand(command, args, cwd) {
-  const result = spawnSync(command, args, {
-    cwd,
-    encoding: 'utf8',
-    stdio: 'pipe',
-  });
-  if (result.status !== 0) {
-    const stderr = (result.stderr || '').trim();
-    const stdout = (result.stdout || '').trim();
-    throw new Error(stderr || stdout || `Command failed: ${command} ${args.join(' ')}`);
+function ensureCommandSucceeded(result, context) {
+  if (result.status === 0) {
+    return;
   }
+  const stderr = (result.stderr || '').trim();
+  const stdout = (result.stdout || '').trim();
+  throw new Error(stderr || stdout || context);
 }
 
 function runLighthouse(url, strategy, categories, locale, chromeFlags, routeDir) {
-  const executable = getLighthouseExecutable();
+  const invoker = createLighthouseInvoker();
   const jsonPath = path.join(routeDir, `${strategy}.lighthouse.json`);
   const htmlPath = path.join(routeDir, `${strategy}.lighthouse.html`);
   const baseArgs = [
@@ -233,11 +255,20 @@ function runLighthouse(url, strategy, categories, locale, chromeFlags, routeDir)
     baseArgs.push('--preset=desktop');
   }
 
-  runCommand(executable, [...baseArgs, '--output=json', `--output-path=${jsonPath}`], skillDir);
-  runCommand(executable, [...baseArgs, '--output=html', `--output-path=${htmlPath}`], skillDir);
+  const jsonResult = invoker.run([...baseArgs, '--output=json', `--output-path=${jsonPath}`]);
+  ensureCommandSucceeded(
+    jsonResult,
+    `Lighthouse JSON run failed using ${invoker.label}. Install Lighthouse locally or ensure npx can fetch it.`
+  );
+
+  const htmlResult = invoker.run([...baseArgs, '--output=html', `--output-path=${htmlPath}`]);
+  ensureCommandSucceeded(
+    htmlResult,
+    `Lighthouse HTML run failed using ${invoker.label}. Install Lighthouse locally or ensure npx can fetch it.`
+  );
 
   const lhr = JSON.parse(readFileSync(jsonPath, 'utf8'));
-  return { jsonPath, htmlPath, lhr };
+  return { jsonPath, htmlPath, lhr, engineSource: invoker.label };
 }
 
 function getCategories(lhr) {
@@ -372,7 +403,6 @@ function uniqueTopIssues(routeSummary) {
   for (const strategy of Object.values(routeSummary.strategies)) {
     for (const opportunity of strategy.opportunities) {
       items.push({
-        kind: 'opportunity',
         title: opportunity.title,
         detail: opportunity.displayValue || (opportunity.savingsMs ? `estimated savings ${Math.round(opportunity.savingsMs)} ms` : 'Opportunity detected'),
         id: opportunity.id,
@@ -380,7 +410,6 @@ function uniqueTopIssues(routeSummary) {
     }
     for (const diagnostic of strategy.diagnostics.slice(0, 4)) {
       items.push({
-        kind: 'diagnostic',
         title: diagnostic.title,
         detail: diagnostic.displayValue || 'Diagnostic signal',
         id: diagnostic.id,
@@ -446,7 +475,7 @@ function collectRouteResult(url, outDir, strategies, categories, budgets, compar
   };
 
   for (const strategy of strategies) {
-    const { lhr, jsonPath, htmlPath } = runLighthouse(url, strategy, categories, locale, chromeFlags, routeDir);
+    const { lhr, jsonPath, htmlPath, engineSource } = runLighthouse(url, strategy, categories, locale, chromeFlags, routeDir);
     const scores = extractScores(lhr, categories);
     const previous = loadPreviousLhr(compareDir, slug, strategy);
     const previousScores = previous ? extractScores(previous, categories) : null;
@@ -461,6 +490,7 @@ function collectRouteResult(url, outDir, strategies, categories, budgets, compar
       rawJson: path.basename(jsonPath),
       rawHtml: path.basename(htmlPath),
       passedAudits: Object.values(getAudits(lhr)).filter((audit) => audit.score === 1).length,
+      engineSource,
     };
   }
 
@@ -468,13 +498,16 @@ function collectRouteResult(url, outDir, strategies, categories, budgets, compar
 }
 
 function buildRouteReport(routeSummary, categories, mode, compareDir, budgets) {
+  const firstStrategy = Object.values(routeSummary.strategies)[0];
+  const engineSource = firstStrategy?.engineSource || 'unknown';
   const lines = [
     '# Local Lighthouse Report',
     '',
     '**Run Status**',
-    `Engine: local-lighthouse`,
+    'Engine: local-lighthouse',
+    `Engine source: ${engineSource}`,
     `Mode: ${mode}`,
-    `Execution: completed`,
+    'Execution: completed',
     `Target: ${routeSummary.url}`,
   ];
   if (compareDir) {
@@ -524,6 +557,7 @@ function buildRouteReport(routeSummary, categories, mode, compareDir, budgets) {
   for (const [strategy, data] of Object.entries(routeSummary.strategies)) {
     lines.push('', `**${strategy[0].toUpperCase()}${strategy.slice(1)} Details**`);
     const facts = data.facts;
+    lines.push(`- Engine source: \`${data.engineSource}\``);
     if (facts.finalUrl) {
       lines.push(`- Final URL: \`${facts.finalUrl}\``);
     }
@@ -584,15 +618,17 @@ function buildRouteReport(routeSummary, categories, mode, compareDir, budgets) {
   }
   lines.push('- If you also want Google field data or external validation, run the optional PSI script against the public URLs.');
 
-  return `${lines.join('\n')}\n`;
+  return `${lines.join('\\n')}\\n`;
 }
 
 function buildIndexReport(routeSummaries, categories, mode, compareDir, budgets, outDir) {
+  const engineSources = [...new Set(routeSummaries.flatMap((routeSummary) => Object.values(routeSummary.strategies).map((entry) => entry.engineSource)))];
   const lines = [
     '# Local Lighthouse Audit Index',
     '',
     '**Run Status**',
     'Engine: local-lighthouse',
+    `Engine source: ${engineSources.join(', ') || 'unknown'}`,
     `Mode: ${mode}`,
     'Execution: completed',
     `Output directory: \`${outDir}\``,
@@ -621,7 +657,7 @@ function buildIndexReport(routeSummaries, categories, mode, compareDir, budgets,
   lines.push('3. Map those findings back to code before editing.');
   lines.push('4. Rerun locally after fixes, then optionally validate with PSI on a public URL.');
 
-  return `${lines.join('\n')}\n`;
+  return `${lines.join('\\n')}\\n`;
 }
 
 function main() {
@@ -677,4 +713,5 @@ try {
   console.error(`ERROR: ${error instanceof Error ? error.message : String(error)}`);
   process.exitCode = 1;
 }
+
 

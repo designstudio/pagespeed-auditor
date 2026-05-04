@@ -9,7 +9,7 @@ description: Run Lighthouse-style web performance audits from inside the current
 
 Use this skill for end-to-end performance review inside a web app repository. Start from the codebase, understand how the app runs, determine the best local or public URL set to audit, run a local Lighthouse audit first, produce structured Markdown reports, and then inspect the relevant code paths to propose or implement targeted improvements.
 
-This skill is now Lighthouse-first. The local audit path is the primary experience when the goal is to run a real PageSpeed-style audit from inside the repository without depending on Google quota.
+This skill is Lighthouse-first. The local audit path is the primary experience when the goal is to run a real PageSpeed-style audit from inside the repository without depending on Google quota.
 
 Use the PSI script only as an optional follow-up when you want Google-hosted validation for a public URL.
 
@@ -25,6 +25,8 @@ Best for:
 - repo-run preview servers
 - repeated before-vs-after verification
 - capturing real Lighthouse scores, metrics, and audits from inside the project
+
+The local runner should first use a Lighthouse engine that is already available. If it does not find one in the skill folder, it should fall back to `npx lighthouse` automatically.
 
 ### `psi-remote`
 
@@ -128,7 +130,7 @@ The local runner accepts:
 - `--locale`: Lighthouse locale. Default is `en-US`.
 - `--chrome-flags`: Extra Chrome flags. Default is `--headless=new`.
 
-The local runner writes real Lighthouse JSON and HTML artifacts per route and strategy.
+The local runner should prefer a ready Lighthouse binary first and fall back to `npx lighthouse` automatically. It writes real Lighthouse JSON and HTML artifacts per route and strategy.
 
 ### 5. Run PSI only as optional follow-up
 
@@ -271,7 +273,7 @@ Use dated run folders or semantic names like `local-baseline`, `after-image-fixe
 
 ### package.json
 
-Install Lighthouse for the local runner.
+Optional local cache for Lighthouse when you want the dependency available without fetching it on demand.
 
 ### scripts/run_local_lighthouse.mjs
 
