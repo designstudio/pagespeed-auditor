@@ -78,30 +78,31 @@ From that inspection, identify:
 
 Prefer this order for the main audit:
 
-1. A local URL from a repo-run dev or preview server.
-2. A preview URL supplied by the user.
-3. A production URL supplied by the user.
-4. A public route discovered in the repo.
+1. A production-like local target generated from the repo itself: built preview server, framework preview server, or static output server.
+2. A local URL from a repo-run dev server only when no production-like target is available.
+3. A preview URL supplied by the user.
+4. A production URL supplied by the user.
+5. A public route discovered in the repo.
 
 For the primary local-lighthouse pass, `localhost` is allowed and expected.
 
 For PSI follow-up, use only public URLs.
 
-### 3. Start the app locally when useful
+### 3. Keep the startup strategy tight
 
-Start the local app when doing so helps understand the codebase or validate likely fixes.
+Prefer the fewest moving parts that can produce a trustworthy audit.
 
-Use the repo's actual package manager and scripts. Prefer reading the existing commands instead of inventing them.
+Default approach:
 
-Local startup helps with:
+1. Build the app if the repo has a normal build step.
+2. Run a production-like preview or static server.
+3. Audit that target locally with Lighthouse.
 
-- verifying the app boots,
-- confirming route structure,
-- spotting hydration or console issues,
-- validating fixes before and after code changes,
-- enabling a real Lighthouse audit from within the repository.
+Only fall back to a dev server when a production-like target is not available.
 
-If a dev server is started, record the command and port in your notes or report.
+Do not keep trying many server variants. Choose one main path, and if it fails, try one fallback path at most before reporting the blocker.
+
+If a server is started, record the command and port in your notes or report.
 
 ### 4. Run the local Lighthouse audit first
 
@@ -120,7 +121,7 @@ The local runner accepts:
 
 - `--url`: Reachable URL to audit. Repeat for multiple URLs. `localhost` is supported.
 - `--urls-file`: Text file with one URL per line.
-- `--out-dir`: Output folder for route subdirectories plus a consolidated index.
+- `--out-dir` or `--outDir`: Output folder for route subdirectories plus a consolidated index.
 - `--strategy`: `mobile`, `desktop`, or `both`.
 - `--categories`: Comma-separated list. Default is `performance,accessibility,best-practices,seo`.
 - `--budget`: Optional category budget such as `performance=90`. Repeat as needed.
@@ -128,9 +129,11 @@ The local runner accepts:
 - `--report-file`: Per-route Markdown report filename. Default is `summary.md`.
 - `--index-file`: Consolidated Markdown report filename. Default is `index.md`.
 - `--locale`: Lighthouse locale. Default is `en-US`.
-- `--chrome-flags`: Extra Chrome flags. Default is `--headless=new`.
+- `--chrome-flags`: Extra Chrome flags. Default is `--headless=new --disable-dev-shm-usage`.
 
-The local runner should prefer a ready Lighthouse binary first and fall back to `npx lighthouse` automatically. It writes real Lighthouse JSON and HTML artifacts per route and strategy.
+The local runner should prefer a ready Lighthouse binary first and fall back to `npx lighthouse` automatically. It writes real Lighthouse JSON artifacts per route and strategy, plus Markdown summaries.
+
+If Lighthouse writes JSON artifacts but exits with a Windows cleanup error, treat the run as recovered instead of failed and surface that warning in the report.
 
 ### 5. Run PSI only as optional follow-up
 
@@ -172,7 +175,7 @@ The local runner generates:
 - a consolidated `index.md` across all audited URLs,
 - one route folder per URL,
 - one per-route Markdown report with scores, metrics, top issues, code-mapping leads, budget results, and optional comparison data,
-- raw Lighthouse JSON and HTML artifacts for each strategy.
+- raw Lighthouse JSON artifacts for each strategy.
 
 Use the reports first, then inspect the codebase to connect findings to likely causes. Examples:
 
@@ -261,9 +264,7 @@ reports/
       index.md
       <target-slug>/
         mobile.lighthouse.json
-        mobile.lighthouse.html
         desktop.lighthouse.json
-        desktop.lighthouse.html
         summary.md
 ```
 
@@ -277,7 +278,7 @@ Optional local cache for Lighthouse when you want the dependency available witho
 
 ### scripts/run_local_lighthouse.mjs
 
-Run real local Lighthouse audits, save JSON and HTML artifacts, and generate per-route Markdown reports plus a consolidated index.
+Run real local Lighthouse audits, save JSON artifacts, and generate per-route Markdown reports plus a consolidated index.
 
 ### scripts/run_pagespeed_insights.py
 

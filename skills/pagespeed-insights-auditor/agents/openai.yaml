@@ -1,4 +1,4 @@
 interface:
   display_name: "PageSpeed Auditor"
-  short_description: "Runs local Lighthouse and optional PSI follow-up"
-  default_prompt: "Use $pagespeed-insights-auditor to run a local Lighthouse audit for this project, then map the biggest findings back to code changes."
+  short_description: "Runs production-like local Lighthouse audits and optional PSI follow-up"
+  default_prompt: "Use $pagespeed-insights-auditor to run a local Lighthouse audit for this project. Prefer a production-like preview target before any dev server, keep command attempts minimal, then map the biggest findings back to code changes."

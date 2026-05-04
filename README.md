@@ -7,6 +7,7 @@ Give Codex a localhost app, a repository frontend, one or more public URLs, or a
 ## What It Does
 
 - Runs local Lighthouse audits against localhost or any reachable URL
+- Prefers production-like local targets such as preview or built output before dev servers
 - Runs mobile and desktop strategies by default
 - Generates structured Markdown reports for each route plus a consolidated index
 - Supports optional score budgets such as `performance=90`
@@ -77,6 +78,7 @@ Run a local audit for a repo app:
 
 ```txt
 Use $pagespeed-insights-auditor to run a local Lighthouse audit for this project.
+Prefer a production-like preview target before any dev server.
 Start the app if needed, audit the main routes in mobile and desktop, generate reports, then map the biggest findings back to code.
 ```
 
@@ -151,9 +153,7 @@ reports/
       index.md
       localhost-4173/
         mobile.lighthouse.json
-        mobile.lighthouse.html
         desktop.lighthouse.json
-        desktop.lighthouse.html
         summary.md
 ```
 
@@ -170,13 +170,14 @@ Each route report is intended to feel like a compact PageSpeed/Lighthouse readou
 
 ## Recommended Workflow
 
-1. Start or identify the local web surface you want to audit.
-2. Run `$pagespeed-insights-auditor` with the local Lighthouse engine first.
-3. Review `index.md` and the per-route `summary.md` files.
-4. Prioritize the worst mobile bottlenecks first.
-5. Inspect the codebase and implement the highest-impact fixes.
-6. Rerun in `compare` mode.
-7. Optionally run the PSI follow-up on the public version of the same routes.
+1. Identify the main frontend target and its critical routes.
+2. Prefer a production-like local target first: preview server, built output, or framework preview.
+3. Run `$pagespeed-insights-auditor` with the local Lighthouse engine.
+4. Review `index.md` and the per-route `summary.md` files.
+5. Prioritize the worst mobile bottlenecks first.
+6. Inspect the codebase and implement the highest-impact fixes.
+7. Rerun in `compare` mode.
+8. Optionally run the PSI follow-up on the public version of the same routes.
 
 ## Notes
 
@@ -185,6 +186,8 @@ Use local Lighthouse as the default engine when you want PageSpeed-style audits 
 Use PSI only when you explicitly want the Google-hosted external perspective for a public URL.
 
 If `PSI_API_KEY` is not configured, the PSI script still works but uses anonymous quota, which may be rate-limited.
+
+The local runner accepts both `--out-dir` and `--outDir` and treats Windows cleanup errors as recoverable when the JSON artifact was written successfully.
 
 ## Troubleshooting
 

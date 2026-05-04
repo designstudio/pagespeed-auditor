@@ -17,7 +17,7 @@ What it gives you:
 - Lighthouse scores for `performance`, `accessibility`, `best-practices`, and `seo`
 - Real metrics like FCP, LCP, TBT, CLS, Speed Index, and INP
 - Opportunities and diagnostics from the local run
-- JSON and HTML artifacts for each strategy
+- JSON artifacts for each strategy
 - Repeatable before-vs-after comparisons on localhost or preview servers
 
 ### `psi-remote`
@@ -36,9 +36,7 @@ A local run contains:
 
 - `index.md`: consolidated report across all audited URLs.
 - `<target-slug>/mobile.lighthouse.json`: raw Lighthouse JSON for the mobile strategy.
-- `<target-slug>/mobile.lighthouse.html`: raw Lighthouse HTML for the mobile strategy.
 - `<target-slug>/desktop.lighthouse.json`: raw Lighthouse JSON for the desktop strategy.
-- `<target-slug>/desktop.lighthouse.html`: raw Lighthouse HTML for the desktop strategy.
 - `<target-slug>/summary.md`: human-readable report for a single audited URL.
 
 A PSI follow-up run can still contain:
@@ -115,7 +113,8 @@ Always include:
 - which mode the report represents,
 - whether the run completed,
 - whether comparison mode was active,
-- which route set was audited.
+- which route set was audited,
+- whether any recoverable runner warnings happened.
 
 ### Scores
 
@@ -163,6 +162,13 @@ Examples:
 - `modern-image-formats` or `uses-responsive-images`: inspect asset formats, image components, and responsive source usage.
 - `server-response-time`: inspect hosting, route handlers, SSR, and document latency.
 - `dom-size` or `mainthread-work-breakdown`: inspect large page trees, hydration scope, and expensive client render paths.
+
+## Reliability Rules
+
+- Prefer one production-like local target first: built preview server, framework preview server, or static output server.
+- Only fall back to a dev server when no production-like target is available.
+- Treat Windows cleanup errors as recoverable if the JSON artifact was written successfully.
+- Avoid reporting a failed run when the measurement itself succeeded and only teardown failed.
 
 ## PSI Follow-Up Guidance
 
@@ -215,6 +221,7 @@ Budget failures are a prioritization tool, not proof of a specific root cause.
 - Lead with the biggest user-facing issue, not the longest audit list.
 - Mention whether the problem is mostly mobile, mostly desktop, or both.
 - If accessibility or SEO scores are low, mention the weakest audit areas instead of only quoting the score.
+- If the first pass accidentally used a dev target, say so clearly and rerun against a production-like target before drawing conclusions.
 - When multiple routes are audited, identify whether the issue is route-specific or systemic.
 - In blocked-run mode, lead with the blocker and then the most actionable fallback findings.
 

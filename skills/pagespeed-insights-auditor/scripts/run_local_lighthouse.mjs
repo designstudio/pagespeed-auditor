@@ -44,6 +44,22 @@ const CODE_MAPPING_HINTS = {
   'duplicated-javascript': 'Inspect duplicate dependencies, barrels, and overlapping client bundles.',
   'legacy-javascript': 'Inspect build target configuration and whether modern bundles can be shipped more efficiently.',
 };
+const KEY_ALIASES = {
+  'out-dir': 'outDir',
+  'urls-file': 'urlsFile',
+  'compare-dir': 'compareDir',
+  'report-file': 'reportFile',
+  'index-file': 'indexFile',
+  'chrome-flags': 'chromeFlags',
+};
+const CLEANUP_ERROR_PATTERNS = [
+  'EPERM',
+  'operation not permitted',
+  'chrome-launcher',
+  'cleanup',
+  'unlink',
+  'rmdir',
+];
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -58,6 +74,7 @@ Options:
   --url <url>              Repeat for multiple URLs. Localhost is supported.
   --urls-file <file>       Optional text file with one URL per line.
   --out-dir <dir>          Output directory for reports and raw artifacts.
+  --outDir <dir>           CamelCase alias for --out-dir.
   --strategy <value>       mobile | desktop | both (default: both)
   --categories <list>      Comma-separated categories (default: performance,accessibility,best-practices,seo)
   --budget <k=v>           Repeat for thresholds like performance=90
@@ -65,7 +82,7 @@ Options:
   --report-file <name>     Per-route Markdown report filename (default: summary.md)
   --index-file <name>      Consolidated Markdown report filename (default: index.md)
   --locale <value>         Lighthouse locale (default: en-US)
-  --chrome-flags <value>   Extra Chrome flags (default: --headless=new)
+  --chrome-flags <value>   Extra Chrome flags (default: --headless=new --disable-dev-shm-usage)
 `);
 }
 
@@ -78,7 +95,7 @@ function parseArgs(argv) {
     reportFile: 'summary.md',
     indexFile: 'index.md',
     locale: 'en-US',
-    chromeFlags: '--headless=new',
+    chromeFlags: '--headless=new --disable-dev-shm-usage',
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -86,13 +103,16 @@ function parseArgs(argv) {
     if (!item.startsWith('--')) {
       continue;
     }
+
     const trimmed = item.slice(2);
     const equalsIndex = trimmed.indexOf('=');
-    const key = equalsIndex >= 0 ? trimmed.slice(0, equalsIndex) : trimmed;
+    const rawKey = equalsIndex >= 0 ? trimmed.slice(0, equalsIndex) : trimmed;
+    const key = KEY_ALIASES[rawKey] || rawKey;
     const inlineValue = equalsIndex >= 0 ? trimmed.slice(equalsIndex + 1) : undefined;
     const nextValue = inlineValue ?? argv[index + 1];
     const consumeNext = inlineValue === undefined && nextValue && !nextValue.startsWith('--');
     const value = inlineValue ?? (consumeNext ? nextValue : true);
+
     if (consumeNext) {
       index += 1;
     }
@@ -156,8 +176,8 @@ function loadUrls(urlArgs, urlsFile) {
       urls.push(line);
     }
   }
-  const unique = [];
   const seen = new Set();
+  const unique = [];
   for (const url of urls) {
     if (!seen.has(url)) {
       seen.add(url);
@@ -231,44 +251,54 @@ function createLighthouseInvoker() {
   };
 }
 
-function ensureCommandSucceeded(result, context) {
-  if (result.status === 0) {
-    return;
-  }
-  const stderr = (result.stderr || '').trim();
-  const stdout = (result.stdout || '').trim();
-  throw new Error(stderr || stdout || context);
+function isRecoverableCleanupError(result) {
+  const combined = `${result.stderr || ''}\n${result.stdout || ''}`.toLowerCase();
+  return CLEANUP_ERROR_PATTERNS.some((pattern) => combined.includes(pattern.toLowerCase()));
 }
 
-function runLighthouse(url, strategy, categories, locale, chromeFlags, routeDir) {
-  const invoker = createLighthouseInvoker();
+function normalizeStatus(result) {
+  return typeof result.status === 'number' ? result.status : 1;
+}
+
+function runLighthouse(url, strategy, categories, locale, chromeFlags, routeDir, invoker) {
   const jsonPath = path.join(routeDir, `${strategy}.lighthouse.json`);
-  const htmlPath = path.join(routeDir, `${strategy}.lighthouse.html`);
-  const baseArgs = [
+  const warnings = [];
+  const args = [
     url,
     '--quiet',
     `--only-categories=${categories.join(',')}`,
     `--locale=${locale}`,
     `--chrome-flags=${chromeFlags}`,
+    '--output=json',
+    `--output-path=${jsonPath}`,
   ];
+
   if (strategy === 'desktop') {
-    baseArgs.push('--preset=desktop');
+    args.push('--preset=desktop');
   }
 
-  const jsonResult = invoker.run([...baseArgs, '--output=json', `--output-path=${jsonPath}`]);
-  ensureCommandSucceeded(
-    jsonResult,
-    `Lighthouse JSON run failed using ${invoker.label}. Install Lighthouse locally or ensure npx can fetch it.`
-  );
+  const result = invoker.run(args);
+  const outputExists = existsSync(jsonPath);
+  const status = normalizeStatus(result);
 
-  const htmlResult = invoker.run([...baseArgs, '--output=html', `--output-path=${htmlPath}`]);
-  ensureCommandSucceeded(
-    htmlResult,
-    `Lighthouse HTML run failed using ${invoker.label}. Install Lighthouse locally or ensure npx can fetch it.`
-  );
+  if (status !== 0 && !(outputExists && isRecoverableCleanupError(result))) {
+    const stderr = (result.stderr || '').trim();
+    const stdout = (result.stdout || '').trim();
+    throw new Error(
+      stderr || stdout || `Lighthouse JSON run failed using ${invoker.label}. Install Lighthouse locally or ensure npx can fetch it.`
+    );
+  }
+
+  if (status !== 0 && outputExists) {
+    warnings.push('Lighthouse exited with a cleanup error after writing JSON artifacts. Results were recovered from disk.');
+  }
+
+  if (!outputExists) {
+    throw new Error(`Lighthouse did not produce the expected JSON artifact: ${jsonPath}`);
+  }
 
   const lhr = JSON.parse(readFileSync(jsonPath, 'utf8'));
-  return { jsonPath, htmlPath, lhr, engineSource: invoker.label };
+  return { jsonPath, lhr, engineSource: invoker.label, warnings };
 }
 
 function getCategories(lhr) {
@@ -463,7 +493,7 @@ function loadPreviousLhr(compareDir, slug, strategy) {
   return JSON.parse(readFileSync(filePath, 'utf8'));
 }
 
-function collectRouteResult(url, outDir, strategies, categories, budgets, compareDir, locale, chromeFlags) {
+function collectRouteResult(url, outDir, strategies, categories, budgets, compareDir, locale, chromeFlags, invoker) {
   const slug = slugifyUrl(url);
   const routeDir = path.join(outDir, slug);
   ensureDir(routeDir);
@@ -475,7 +505,7 @@ function collectRouteResult(url, outDir, strategies, categories, budgets, compar
   };
 
   for (const strategy of strategies) {
-    const { lhr, jsonPath, htmlPath, engineSource } = runLighthouse(url, strategy, categories, locale, chromeFlags, routeDir);
+    const { lhr, jsonPath, engineSource, warnings } = runLighthouse(url, strategy, categories, locale, chromeFlags, routeDir, invoker);
     const scores = extractScores(lhr, categories);
     const previous = loadPreviousLhr(compareDir, slug, strategy);
     const previousScores = previous ? extractScores(previous, categories) : null;
@@ -488,18 +518,23 @@ function collectRouteResult(url, outDir, strategies, categories, budgets, compar
       comparison: previousScores ? compareScores(scores, previousScores) : null,
       budgetStatus: budgetResults(scores, budgets),
       rawJson: path.basename(jsonPath),
-      rawHtml: path.basename(htmlPath),
       passedAudits: Object.values(getAudits(lhr)).filter((audit) => audit.score === 1).length,
       engineSource,
+      warnings,
     };
   }
 
   return routeSummary;
 }
 
+function categoryLabel(category) {
+  return category.replace('best-practices', 'Best Practices').replace(/^./u, (char) => char.toUpperCase());
+}
+
 function buildRouteReport(routeSummary, categories, mode, compareDir, budgets) {
   const firstStrategy = Object.values(routeSummary.strategies)[0];
   const engineSource = firstStrategy?.engineSource || 'unknown';
+  const allWarnings = [...new Set(Object.values(routeSummary.strategies).flatMap((item) => item.warnings || []))];
   const lines = [
     '# Local Lighthouse Report',
     '',
@@ -510,6 +545,7 @@ function buildRouteReport(routeSummary, categories, mode, compareDir, budgets) {
     'Execution: completed',
     `Target: ${routeSummary.url}`,
   ];
+
   if (compareDir) {
     lines.push(`Comparison baseline: \`${compareDir}\``);
   }
@@ -517,9 +553,12 @@ function buildRouteReport(routeSummary, categories, mode, compareDir, budgets) {
     const formattedBudgets = Object.entries(budgets).map(([key, value]) => `${key}=${value}`).join(', ');
     lines.push(`Budgets: \`${formattedBudgets}\``);
   }
+  if (allWarnings.length) {
+    lines.push(`Warnings: ${allWarnings.join(' ')}`);
+  }
 
   lines.push('', '**Route Summary**');
-  lines.push(`| Strategy | ${categories.map((category) => category.replace('best-practices', 'Best Practices').replace(/^./u, (char) => char.toUpperCase())).join(' | ')} |`);
+  lines.push(`| Strategy | ${categories.map(categoryLabel).join(' | ')} |`);
   lines.push(`|---|${categories.map(() => '---:').join('|')}|`);
   for (const [strategy, data] of Object.entries(routeSummary.strategies)) {
     const row = categories.map((category) => data.scores[category] ?? 'n/a');
@@ -567,6 +606,9 @@ function buildRouteReport(routeSummary, categories, mode, compareDir, budgets) {
     if (facts.capturedAt) {
       lines.push(`- Captured at: \`${facts.capturedAt}\``);
     }
+    if (data.warnings.length) {
+      data.warnings.forEach((warning) => lines.push(`- Warning: ${warning}`));
+    }
     if (data.comparison) {
       lines.push('- Score deltas:');
       for (const category of categories) {
@@ -608,7 +650,7 @@ function buildRouteReport(routeSummary, categories, mode, compareDir, budgets) {
 
   lines.push('', '**Raw Artifacts**');
   for (const [strategy, data] of Object.entries(routeSummary.strategies)) {
-    lines.push(`- ${strategy}: \`${path.join(routeSummary.slug, data.rawJson)}\`, \`${path.join(routeSummary.slug, data.rawHtml)}\``);
+    lines.push(`- ${strategy}: \`${path.join(routeSummary.slug, data.rawJson)}\``);
   }
 
   lines.push('', '**Next Pass**');
@@ -618,11 +660,12 @@ function buildRouteReport(routeSummary, categories, mode, compareDir, budgets) {
   }
   lines.push('- If you also want Google field data or external validation, run the optional PSI script against the public URLs.');
 
-  return `${lines.join('\\n')}\\n`;
+  return `${lines.join('\n')}\n`;
 }
 
 function buildIndexReport(routeSummaries, categories, mode, compareDir, budgets, outDir) {
   const engineSources = [...new Set(routeSummaries.flatMap((routeSummary) => Object.values(routeSummary.strategies).map((entry) => entry.engineSource)))];
+  const warnings = [...new Set(routeSummaries.flatMap((routeSummary) => Object.values(routeSummary.strategies).flatMap((entry) => entry.warnings || [])))];
   const lines = [
     '# Local Lighthouse Audit Index',
     '',
@@ -633,6 +676,7 @@ function buildIndexReport(routeSummaries, categories, mode, compareDir, budgets,
     'Execution: completed',
     `Output directory: \`${outDir}\``,
   ];
+
   if (compareDir) {
     lines.push(`Comparison baseline: \`${compareDir}\``);
   }
@@ -640,9 +684,12 @@ function buildIndexReport(routeSummaries, categories, mode, compareDir, budgets,
     const formattedBudgets = Object.entries(budgets).map(([key, value]) => `${key}=${value}`).join(', ');
     lines.push(`Budgets: \`${formattedBudgets}\``);
   }
+  if (warnings.length) {
+    lines.push(`Warnings: ${warnings.join(' ')}`);
+  }
 
   lines.push('', '**Routes**');
-  lines.push(`| Route | Strategy | ${categories.map((category) => category.replace('best-practices', 'Best Practices').replace(/^./u, (char) => char.toUpperCase())).join(' | ')} | Report |`);
+  lines.push(`| Route | Strategy | ${categories.map(categoryLabel).join(' | ')} | Report |`);
   lines.push(`|---|---|${categories.map(() => '---:').join('|')}|---|`);
   for (const routeSummary of routeSummaries) {
     for (const [strategy, data] of Object.entries(routeSummary.strategies)) {
@@ -652,12 +699,13 @@ function buildIndexReport(routeSummaries, categories, mode, compareDir, budgets,
   }
 
   lines.push('', '**Recommended Workflow**');
-  lines.push('1. Start from the lowest mobile scores and the biggest LCP or TBT regressions.');
-  lines.push('2. Open each route summary and inspect the highest-impact opportunities.');
-  lines.push('3. Map those findings back to code before editing.');
-  lines.push('4. Rerun locally after fixes, then optionally validate with PSI on a public URL.');
+  lines.push('1. Prefer a production-like target first: built preview, static output, or framework preview server.');
+  lines.push('2. Start from the lowest mobile scores and the biggest LCP or TBT regressions.');
+  lines.push('3. Open each route summary and inspect the highest-impact opportunities.');
+  lines.push('4. Map those findings back to code before editing.');
+  lines.push('5. Rerun locally after fixes, then optionally validate with PSI on a public URL.');
 
-  return `${lines.join('\\n')}\\n`;
+  return `${lines.join('\n')}\n`;
 }
 
 function main() {
@@ -678,6 +726,7 @@ function main() {
   const compareDir = args.compareDir ? path.resolve(String(args.compareDir)) : null;
   const outDir = path.resolve(String(args.outDir));
   const mode = detectMode(urls.length, compareDir, budgets);
+  const invoker = createLighthouseInvoker();
 
   ensureDir(outDir);
 
@@ -690,7 +739,8 @@ function main() {
       budgets,
       compareDir,
       String(args.locale),
-      String(args.chromeFlags)
+      String(args.chromeFlags),
+      invoker
     );
     const report = buildRouteReport(routeSummary, categories, mode, compareDir, budgets);
     writeFileSync(path.join(outDir, routeSummary.slug, String(args.reportFile)), report, 'utf8');
@@ -713,5 +763,3 @@ try {
   console.error(`ERROR: ${error instanceof Error ? error.message : String(error)}`);
   process.exitCode = 1;
 }
-
-
